@@ -95,3 +95,27 @@ def ensure_stacking_visible(model_predictions: Dict[str, np.ndarray], comparison
         return True
     return False
 
+
+def render_and_export_T_plot(
+    comparison_df: pd.DataFrame,
+    model_predictions: Dict[str, np.ndarray],
+    product_name: str,
+    output_dir: str,
+    config,
+):
+    import matplotlib.pyplot as plt
+    import os
+    plt.figure(figsize=(18, 10))
+    plt.plot(comparison_df['period_start'], comparison_df['actual_demand'], 'o-', label='实际', linewidth=3, color='black')
+    for name in model_predictions.keys():
+        col = f'{name}_forecast'
+        if col in comparison_df.columns:
+            plt.plot(comparison_df['period_start'], comparison_df[col], '--', label=name, linewidth=2)
+    plt.title(f'{product_name} {config.name} 聚合(窗口={config.future_window}天) 预测对比')
+    plt.xlabel('窗口起始日期'); plt.ylabel('窗口聚合需求'); plt.legend(fontsize=9); plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    path = os.path.join(output_dir, f"{product_name}_{config.name}_预测比较_T.png")
+    plt.savefig(path, dpi=300, bbox_inches='tight')
+    plt.close()
+    return path
+
