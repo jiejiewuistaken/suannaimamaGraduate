@@ -305,6 +305,63 @@ def build_window_features_from_past(
     return agg_row
 
 
+def _dynamic_ma_baseline_for_T(
+    daily_df: pd.DataFrame,
+    period_infos: List[Dict[str, pd.Timestamp]],
+    future_window: int,
+) -> Tuple[List[float], str]:
+    """Compute dynamic moving-average baseline aligned to the aggregated periods.
+
+    Rules:
+    - future_window <= 7  -> weekly aggregation, 13-period MA, scale by future_window/7
+    - 8..15               -> bi-weekly aggregation, 6-period MA, scale by future_window/14
+    - >15                 -> monthly aggregation, 3-period MA, scale by future_window/30
+    """
+    df = daily_df.copy()
+    df['date'] = pd.to_datetime(df['date'])
+    df = df.sort_values('date')
+
+    if future_window <= 7:
+        agg = df.resample('W-SUN', on='date')['demand'].sum().reset_index()
+        agg.columns = ['period_start', 'agg_demand']
+        ma_window = 13
+        ratio = future_window / 7.0
+        baseline_name = '13周移动平均'
+    elif future_window <= 15:
+        agg = df.resample('2W-SUN', on='date')['demand'].sum().reset_index()
+        agg.columns = ['period_start', 'agg_demand']
+        ma_window = 6
+        ratio = future_window / 14.0
+        baseline_name = '6期移动平均(双周)'
+    else:
+        agg = df.resample('MS', on='date')['demand'].sum().reset_index()
+        agg.columns = ['period_start', 'agg_demand']
+        ma_window = 3
+        ratio = future_window / 30.0
+        baseline_name = '3期移动平均(月)'
+
+    agg['ma'] = agg['agg_demand'].rolling(window=ma_window, min_periods=1).mean()
+    agg['ma_forecast'] = agg['ma'].shift(1)
+
+    preds: List[float] = []
+    for p in period_infos:
+        start = pd.to_datetime(p['start'])
+        end = pd.to_datetime(p['end'])
+        mid = start + (end - start) / 2
+        hist = agg[agg['period_start'] <= mid]
+        if len(hist) > 0:
+            row = hist.iloc[-1]
+        else:
+            row = agg.iloc[0]
+        val = float(row.get('ma_forecast', float('nan')))
+        if not np.isfinite(val):
+            # fallback to previous prediction or scaled agg_demand
+            val = preds[-1] if len(preds) > 0 else float(row.get('agg_demand', 0.0))
+        preds.append(max(0.0, val * ratio))
+
+    return preds, baseline_name
+
+
 def aggregate_prediction_recursive_bsafe(
     daily_df: pd.DataFrame,
     selected_features: List[str],
@@ -404,6 +461,16 @@ def aggregate_prediction_recursive_bsafe(
 
         # Next window
         current_date = current_date + timedelta(days=step)
+
+    # Attach dynamic baseline aligned with periods
+    try:
+        baseline_preds, baseline_name = _dynamic_ma_baseline_for_T(
+            daily_df=df, period_infos=period_infos, future_window=future_window
+        )
+        all_predictions[baseline_name] = baseline_preds
+    except Exception:
+        # Keep predictions as-is if baseline fails
+        pass
 
     return {
         'predictions': all_predictions,
