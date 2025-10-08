@@ -135,6 +135,10 @@ def build_training_dataset(
             future_data=future_slice,
             selected_features=selected_features,
         )
+        # Drop non-numeric/meta keys from features
+        for k in ['period_start', 'period_end', 'demand']:
+            if k in features_dict:
+                features_dict.pop(k, None)
         X_rows.append(features_dict)
         y_vals.append(float(future_slice['demand'].sum()))
 
