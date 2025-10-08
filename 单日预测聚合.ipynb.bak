@@ -122,7 +122,9 @@ def smart_hyperparameter_search(config, X_train, y_train, model_name, data_thres
 		)
 
 	search.fit(X_train, y_train)
-	return search.best_estimator_, search.best_params_, search.best_score_, getattr(search, 'n_splits_', None) or 0{
+	return search.best_estimator_, search.best_params_, search.best_score_, getattr(search, 'n_splits_', None) or 0# -- 补充：Stacking 全链路输出、重命名与Pipeline搜索 --
+STACKING_ENABLED = True
+STACKING_DIAG_VERBOSE = True{
  "cells": [
   {
    "cell_type": "code",
